@@ -1,0 +1,256 @@
+<!-- {% load static %} -->
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Python Web IDE</title>
+
+<!-- Google Fonts -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code&family=Inter&display=swap" />
+
+<!-- CodeMirror CSS -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/theme/monokai.min.css" />
+
+<!-- xterm CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+
+<!-- Custom styles -->
+<style>
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+  body {
+    font-family: 'Inter', 'Fira Code', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f0f2f5;
+    color: #333;
+    transition: background-color 0.3s, color 0.3s;
+  }
+  body.dark {
+    background-color: #1e1e1e;
+    color: #ddd;
+  }
+  .container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  h1 {
+    font-family: 'Fira Code', monospace;
+    font-size: 2rem;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  button.theme-toggle {
+    background: transparent;
+    border: 2px solid #333;
+    border-radius: 50px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+  }
+  body.dark .theme-toggle {
+    border-color: #ccc;
+  }
+  button.theme-toggle:hover {
+    background-color: #007bff;
+    color: #fff;
+    border-color: #007bff;
+  }
+
+  /* Editor styles */
+  #editor {
+    height: 300px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+
+  /* Run button style */
+  #run-btn {
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    transition: background-color 0.3s, transform 0.2s;
+  }
+  #run-btn:hover {
+    background-color: #0056b3;
+    transform: translateY(-2px);
+  }
+
+  /* Terminal styles */
+  #terminal {
+    height: 250px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+
+  /* Responsive */
+  @media(max-width: 768px) {
+    .header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    #editor {
+      height: 250px;
+    }
+    #terminal {
+      height: 200px;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <h1>Python Code Editor 🐍</h1>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle Theme">🌗</button>
+  </header>
+
+  <!-- CodeMirror Editor -->
+  <div id="editor"></div>
+
+  <!-- Run Button -->
+  <div style="display:flex; justify-content: flex-start; margin-top: 1rem;">
+    <button id="run-btn">▶ Run Code</button>
+  </div>
+
+  <!-- Terminal -->
+  <div id="terminal"></div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/python/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // Initialize CodeMirror
+    const editor = CodeMirror(document.getElementById('editor'), {
+      value: `name = input("Enter your name: ")\nprint(f"Hello, {name}")`,
+      mode: 'python',
+      lineNumbers: true,
+      theme: localStorage.getItem('theme') === 'dark' ? 'monokai' : 'default',
+      lineHeight: 1.6,
+      viewportMargin: Infinity,
+    });
+    // Apply theme
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.body.classList.toggle('dark', savedTheme==='dark');
+    editor.setOption('theme', savedTheme==='dark' ? 'monokai' : 'default');
+
+    // Initialize terminal
+    const term = new Terminal({
+      cursorBlink: true,
+      fontFamily: "'Fira Code', monospace",
+      fontSize: 14,
+      theme: {
+        background: document.body.classList.contains('dark') ? '#1e1e1e' : '#f0f2f5',
+        foreground: document.body.classList.contains('dark') ? '#cccccc' : '#333'
+      }
+    });
+    term.open(document.getElementById('terminal'));
+    term.focus();
+
+    // Setup WebSocket
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const socket = new WebSocket(`${wsProtocol}://${window.location.host}/ws/run_code/`);
+
+    socket.onopen = () => {
+      console.log('WebSocket connected');
+    };
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.output) {
+        // Write output to terminal
+        term.write(data.output.replace(/\n/g, '\r\n'));
+      }
+      if (data.error) {
+        // Show errors
+        term.write(`\x1b[31m${data.error}\x1b[0m\r\n`);
+      }
+      if (data.finished) {
+        // Execution finished
+        // You can add any UI indication here
+      }
+    };
+
+    socket.onerror = (e) => {
+      console.error('WebSocket error:', e);
+      term.write('\x1b[31mWebSocket error.\x1b[0m\r\n');
+    };
+
+    socket.onclose = () => {
+      term.write('\x1b[33mConnection closed.\x1b[0m\r\n');
+    };
+
+    // Handle user input in terminal
+    let inputBuffer = '';
+    let awaitingInput = false;
+
+    term.onData((data) => {
+      if (data === '\r') {
+        // Send input to backend
+        socket.send(JSON.stringify({ input: inputBuffer }));
+        inputBuffer = '';
+        // Don't write newline twice
+        // (backend echoes input)
+      } else if (data === '\u0003') {
+        // Ctrl+C - optional: handle interruption
+        // For now, just ignore or send special message
+      } else {
+        inputBuffer += data;
+        // Echo character
+        // (already handled by terminal)
+      }
+    });
+
+    // On clicking Run
+    document.getElementById('run-btn').addEventListener('click', () => {
+      const code = editor.getValue();
+      term.reset();
+      socket.send(JSON.stringify({ code }));
+    });
+
+    // Toggle theme
+    window.toggleTheme = () => {
+      const isDark = document.body.classList.toggle('dark');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      // Update terminal theme
+      term.setOption('theme', {
+        background: isDark ? '#1e1e1e' : '#f0f2f5',
+        foreground: isDark ? '#cccccc' : '#333'
+      });
+      // Update editor theme
+      editor.setOption('theme', isDark ? 'monokai' : 'default');
+    };
+  });
+</script>
+</body>
+</html>
